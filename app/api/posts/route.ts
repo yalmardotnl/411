@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import subreddits from "@/subreddits.config";
 
+export const runtime = "edge";
+
 export type RedditPost = {
   id: string;
   title: string;
@@ -75,8 +77,11 @@ export async function GET(req: NextRequest) {
     const multiSub = targets.map((s) => s.name).join("+");
     const url = `https://www.reddit.com/r/${multiSub}/search.json?q=${encodeURIComponent(q)}&restrict_sr=on&sort=${sort}&limit=25${timeParam}${afterParam}`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "reddit-catalog/1.0" },
-      next: { revalidate: 60 },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; reddit-catalog/1.0; +https://411-pi.vercel.app)",
+        "Accept": "application/json",
+      },
+      cache: "no-store",
     });
     if (!res.ok) return NextResponse.json({ posts: [], after: null }, { status: res.status });
     const json = await res.json();
@@ -95,8 +100,11 @@ export async function GET(req: NextRequest) {
     const cursorParam = isSingle ? afterParam : "";
     const url = `https://www.reddit.com/r/${sub.name}/${sort}.json?limit=${limit}${timeParam}${cursorParam}`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "reddit-catalog/1.0" },
-      next: { revalidate: 300 },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; reddit-catalog/1.0; +https://411-pi.vercel.app)",
+        "Accept": "application/json",
+      },
+      cache: "no-store",
     });
     if (!res.ok) return { posts: [], after: null };
     const json = await res.json();
