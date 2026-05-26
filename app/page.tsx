@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import subreddits from "@/subreddits.config";
-import type { RedditPost, PostsResponse } from "@/app/api/posts/route";
+import { fetchPosts } from "@/lib/reddit";
+import type { RedditPost } from "@/app/api/posts/types";
 
 const FEED_SORTS = ["hot", "new", "top", "rising"] as const;
 const SEARCH_SORTS = ["relevance", "new", "top", "comments"] as const;
@@ -88,28 +89,25 @@ function CatalogPage() {
   const isSearchMode = debouncedSearch.length > 0;
   const activeSort = isSearchMode ? searchSort : feedSort;
 
-  const buildParams = useCallback(
-    (cursor?: string | null) => {
-      const params = new URLSearchParams({ sort: activeSort });
-      if (debouncedSearch) params.set("q", debouncedSearch);
-      if (activeSort === "top") params.set("t", timeFilter);
-      if (activeSubs.length) params.set("subreddits", activeSubs.join(","));
-      if (activeTags.length) params.set("tags", activeTags.join(","));
-      if (cursor) params.set("after", cursor);
-      return params;
-    },
+  const redditParams = useCallback(
+    (cursor?: string | null) => ({
+      sort: activeSort,
+      t: timeFilter,
+      q: debouncedSearch,
+      after: cursor ?? "",
+      filterSubreddits: activeSubs,
+      filterTags: activeTags,
+    }),
     [activeSort, debouncedSearch, timeFilter, activeSubs, activeTags]
   );
 
-  const fetchPosts = useCallback(async () => {
+  const doFetchPosts = useCallback(async () => {
     setLoading(true);
     setError(null);
     setPosts([]);
     setAfter(null);
     try {
-      const res = await fetch(`/api/posts?${buildParams()}`);
-      if (!res.ok) throw new Error(`Reddit returned ${res.status}`);
-      const data: PostsResponse = await res.json();
+      const data = await fetchPosts(redditParams());
       setPosts(data.posts);
       setAfter(data.after);
     } catch (e) {
@@ -117,15 +115,13 @@ function CatalogPage() {
     } finally {
       setLoading(false);
     }
-  }, [buildParams]);
+  }, [redditParams]);
 
   const loadMore = useCallback(async () => {
     if (!after || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(`/api/posts?${buildParams(after)}`);
-      if (!res.ok) throw new Error(`Reddit returned ${res.status}`);
-      const data: PostsResponse = await res.json();
+      const data = await fetchPosts(redditParams(after));
       setPosts((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         return [...prev, ...data.posts.filter((p) => !ids.has(p.id))];
@@ -136,12 +132,12 @@ function CatalogPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [after, loadingMore, buildParams]);
+  }, [after, loadingMore, redditParams]);
 
   // Initial fetch + refetch on filter/sort change
   useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+    doFetchPosts();
+  }, [doFetchPosts]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -154,7 +150,8 @@ function CatalogPage() {
       },
       { threshold: 0.1 }
     );
-    observer.observe(sentinelRef.current);
+    const el = sentinelRef.current;
+    observer.observe(el);
     return () => observer.disconnect();
   }, [after, loading, loadingMore, loadMore]);
 
@@ -377,7 +374,7 @@ function CatalogPage() {
             <div className="bg-red-950/50 border border-red-800 text-red-400 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
               <span>Failed to load posts: {error}</span>
               <button
-                onClick={fetchPosts}
+                onClick={doFetchPosts}
                 className="ml-4 text-red-300 hover:text-white underline text-xs"
               >
                 Retry
